@@ -31,6 +31,7 @@ Don't tell anyone!
     });
 
     vi.spyOn(fs, "access").mockResolvedValue(undefined);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const files = await loadWorkspaceBootstrapFiles(workspaceDir);
     const toolsFile = files.find((f) => f.name === DEFAULT_TOOLS_FILENAME);
@@ -42,6 +43,7 @@ Don't tell anyone!
 
     expect(toolsFile?.content).not.toContain(leak);
     expect(toolsFile?.content).toContain("REDACTED");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Secrets detected in TOOLS.md"));
   });
 
   it("redacts GitHub tokens", async () => {
@@ -56,6 +58,7 @@ Don't tell anyone!
       throw new Error("File not found");
     });
     vi.spyOn(fs, "access").mockResolvedValue(undefined);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const files = await loadWorkspaceBootstrapFiles(workspaceDir);
     const toolsFile = files.find((f) => f.name === DEFAULT_TOOLS_FILENAME);
@@ -63,5 +66,26 @@ Don't tell anyone!
     expect(toolsFile?.missing).toBe(false);
     expect(toolsFile?.content).not.toContain(leak);
     expect(toolsFile?.content).toContain("REDACTED");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Secrets detected in TOOLS.md"));
+  });
+
+  it("does not warn on safe content", async () => {
+    const content = "# My Tools\nJust some normal text here.";
+
+    vi.spyOn(fs, "readFile").mockImplementation(async (filePath) => {
+      // @ts-ignore
+      if (typeof filePath === "string" && filePath.endsWith(DEFAULT_TOOLS_FILENAME)) {
+        return content;
+      }
+      throw new Error("File not found");
+    });
+    vi.spyOn(fs, "access").mockResolvedValue(undefined);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const files = await loadWorkspaceBootstrapFiles(workspaceDir);
+    const toolsFile = files.find((f) => f.name === DEFAULT_TOOLS_FILENAME);
+
+    expect(toolsFile?.content).toBe(content);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });

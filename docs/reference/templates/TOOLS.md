@@ -7,6 +7,13 @@ read_when:
 
 # TOOLS.md - Local Notes
 
+# Tools
+
+> [!IMPORTANT]
+> **Refrain from storing secrets (API keys, tokens, passwords) in this file.**
+> Contents of this file are included in the system prompt and sent to the LLM on every request.
+> Use environment variables or a secret manager instead.
+
 Skills define _how_ tools work. This file is for _your_ specifics — the stuff that's unique to your setup.
 
 ## What Goes Here
