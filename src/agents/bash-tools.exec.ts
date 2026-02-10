@@ -18,6 +18,7 @@ import {
   recordAllowlistUse,
   resolveExecApprovals,
   resolveExecApprovalsFromFile,
+  analyzeShellCommand,
 } from "../infra/exec-approvals.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { buildNodeShellCommand } from "../infra/node-shell.js";
@@ -266,6 +267,35 @@ export type ExecToolDetails =
       cwd?: string;
       nodeId?: string;
     };
+
+function isRiskyPipe(command: string): boolean {
+  try {
+    const analysis = analyzeShellCommand({ command });
+    if (!analysis.ok) {
+      return false;
+    }
+
+    let seenFetcher = false;
+    for (const segment of analysis.segments) {
+      const exe = (
+        segment.resolution?.executableName ||
+        segment.resolution?.rawExecutable ||
+        segment.argv[0] ||
+        ""
+      ).toLowerCase();
+      // Only care about the command itself (first token usually)
+
+      if (/^(curl|wget|fetch)$/.test(exe)) {
+        seenFetcher = true;
+      } else if (seenFetcher && /^(bash|sh|zsh|python|ruby|perl|php|node)$/.test(exe)) {
+        return true;
+      }
+    }
+  } catch {
+    // ignore parsing errors
+  }
+  return false;
+}
 
 function normalizeExecHost(value?: string | null): ExecHost | null {
   const normalized = value?.trim().toLowerCase();
@@ -951,6 +981,16 @@ export function createExecTool(
       const bypassApprovals = elevatedRequested && elevatedMode === "full";
       if (bypassApprovals) {
         ask = "off";
+      }
+
+      // SOCIAL ENGINEERING CHECK: Issue #4 (External Dependency Staging)
+      // Detect potentially dangerous piped commands (e.g. curl | bash)
+      // If detected, force ask="always" and warn the user.
+      if (isRiskyPipe(params.command)) {
+        ask = "always";
+        warnings.push(
+          "Warning: Potentially dangerous command detected (network fetch piped to shell). Execution approval is strictly enforced.",
+        );
       }
 
       const sandbox = host === "sandbox" ? defaults?.sandbox : undefined;
