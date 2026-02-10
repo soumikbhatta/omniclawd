@@ -236,6 +236,58 @@ async function resolveMemoryBootstrapEntries(
   return deduped;
 }
 
+const SECRET_PATTERNS = [
+  // OpenAI / generic sk- keys (allow hyphens/underscores in body)
+  /sk-[a-zA-Z0-9\-_]{20,}/g,
+  /sk-(proj|admin)-[a-zA-Z0-9\-_]{20,}/g,
+  // GitHub (ghp is 36 chars payload, github_pat is variable)
+  /ghp_[a-zA-Z0-9]{30,}/g, // Lowered bound to Catch slightly shorter variants/mocks
+  /github_pat_[a-zA-Z0-9]{22,}_[a-zA-Z0-9]{50,}/g,
+  // Slack
+  /xox[baprs]-([0-9a-zA-Z]{10,48})?/g,
+  // AWS
+  /AKIA[0-9A-Z]{16}/g,
+  /ASIA[0-9A-Z]{16}/g,
+  // Google
+  /AIza[0-9A-Za-z-_]{35}/g,
+  // Stripe
+  /(sk|rk)_live_[a-zA-Z0-9]{24,}/g,
+  // Private Key Headers
+  /-----BEGIN ((EC|PGP|DSA|RSA|OPENSSH) )?PRIVATE KEY-----/g,
+  // Generic "password/token =" assignments often pasted into TOOLS.md
+  /(password|passwd|secret|token|api_key|apikey)\s*[:=]\s*["']?([a-zA-Z0-9@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]{8,})["']?/gi,
+];
+
+function redactSecrets(content: string): string {
+  let redacted = content;
+
+  // Generic key-value redaction helper
+  const redactValue = (match: string, val: string) => {
+    // Don't redact safe looking values (e.g. "true", "false", short numbers)
+    if (["true", "false", "on", "off"].includes(val.toLowerCase())) {
+      return match;
+    }
+    if (/^\d{1,4}$/.test(val)) {
+      return match;
+    }
+    return match.replace(val, "[REDACTED]");
+  };
+
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, (match, p1, p2) => {
+      // Handle the generic key-value capture group pattern (last in array)
+      if (pattern.source.includes("password|passwd")) {
+        // p1 is key, p2 is value
+        if (p2) {
+          return redactValue(match, p2);
+        }
+      }
+      return "[REDACTED]";
+    });
+  }
+  return redacted;
+}
+
 export async function loadWorkspaceBootstrapFiles(dir: string): Promise<WorkspaceBootstrapFile[]> {
   const resolvedDir = resolveUserPath(dir);
 
@@ -278,7 +330,13 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
   const result: WorkspaceBootstrapFile[] = [];
   for (const entry of entries) {
     try {
-      const content = await fs.readFile(entry.filePath, "utf-8");
+      let content = await fs.readFile(entry.filePath, "utf-8");
+
+      // REDACTION: Strip secrets from workspace files before they enter the system prompt
+      if (content && content.trim().length > 0) {
+        content = redactSecrets(content);
+      }
+
       result.push({
         name: entry.name,
         path: entry.filePath,
