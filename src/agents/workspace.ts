@@ -334,7 +334,13 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
 
       // REDACTION: Strip secrets from workspace files before they enter the system prompt
       if (content && content.trim().length > 0) {
-        content = redactSecrets(content);
+        const redacted = redactSecrets(content);
+        if (redacted !== content) {
+          console.warn(
+            `[WARN] Secrets detected in ${entry.name}. They have been redacted from the system prompt. Please remove them from the file.`,
+          );
+          content = redacted;
+        }
       }
 
       result.push({
