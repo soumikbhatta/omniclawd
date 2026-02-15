@@ -3,7 +3,6 @@ import type { SessionSystemPromptReport } from "../config/sessions/types.js";
 import {
   estimateTokensFromChars,
   formatContextBreakdown,
-  formatKTokens,
   formatTokensCompact,
 } from "./status.format.js";
 
